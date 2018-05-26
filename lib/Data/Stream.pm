@@ -1,6 +1,7 @@
 package Data::Stream;
 use strict;
 use warnings;
+no warnings 'recursion';
 use utf8;
 use List::Util qw/reduce/;
 use Clone 'clone';
@@ -152,13 +153,35 @@ sub foreach: method {
 
 sub foldl {
     my ($self, $acc, $f) = @_;
-    my $stream = $self->next;
+    my $call_next = not defined shift;
+    my $stream = $call_next ? $self->next : $self;
 
-    while ($stream->{cons} != $Data::Stream::Cons::EMPTY) {
-        $acc = $f->($acc, $stream->value);
-        $stream = $stream->tail;
-    }
-    $acc;
+    return $acc if $stream->{cons} == $Data::Stream::Cons::EMPTY;
+    @_ = ($stream->tail, $f->($acc, $stream->value), $f, 1);
+    goto &foldl;
+}
+
+# 遅延評価使えば無限リストに対しても動作するfoldr作れそう
+sub foldr {
+    my ($self, $f, $acc) = @_;
+    # $f :: a -> b -> b
+    my $call_next = not defined shift;
+
+    $f->()
+}
+
+sub forall {
+    my ($self, $f) = @_;
+    # $f :: Function(Any -> Bool)
+    
+    $self->foldl(1, sub { $_[0] && $f->($_[1]) });
+}
+
+sub exists {
+    my ($self, $f) = @_;
+    # $f :: Function(Any -> Bool)
+    
+    $self->foldl(0, sub { $_[0] || $f->($_[1]) });
 }
 
 sub to_arrayref {
