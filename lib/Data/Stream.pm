@@ -86,7 +86,7 @@ sub next {
 # 有効な要素が見つからない場合は$Data::Stream::Cons::EMPTYのStreamを返す
 sub tail {
     my $self = shift;
-    return $self if $self->{cons} == $Data::Stream::Cons::EMPTY;
+    return $self if $self->is_empty; 
     return Data::Stream->new(cons => $self->{cons}->tail->eval, config => $self->{config})->next;
 }
 
@@ -95,6 +95,11 @@ sub value {
     my $self = shift;
     my $map_f = $self->{config}->{map_f} // sub { shift };
     return $map_f->($self->{cons}->value->eval);
+}
+
+sub is_empty {
+    my $self = shift;
+    return $self->{cons} == $Data::Stream::Cons::EMPTY;
 }
 
 ###### collection methoods ######
@@ -148,7 +153,7 @@ sub foreach: method {
     my ($self, $f) = @_;
     my $stream = $self->next;
 
-    while ($stream->{cons} != $Data::Stream::Cons::EMPTY) {
+    while (not $stream->is_empty) {
         $f->($stream->value);
         $stream = $stream->tail;
     }
@@ -162,7 +167,7 @@ sub foldl {
     my $call_next = not defined shift;
     my $stream = $call_next ? $self->next : $self;
 
-    return $acc if $stream->{cons} == $Data::Stream::Cons::EMPTY;
+    return $acc if $stream->is_empty;
     @_ = ($stream->tail, $f->($acc, $stream->value), $f, 1);
     goto &foldl;
 }
@@ -170,11 +175,14 @@ sub foldl {
 # 遅延評価使えば無限リストに対しても動作するfoldr作れそう
 sub foldr {
     my ($self, $f, $acc) = @_;
-    # $f :: a -> b -> b
+    # $f :: Monad::Lazy(a) -> b -> b
+    
     my $call_next = not defined shift;
+    my $stream = $call_next ? $self->next : $self;
 
-    # 遅延評価を楽にできるようにLazyMonadを実装するの面白そう
-    $f->()
+    return $acc if $stream->is_empty;
+
+    #return $
 }
 
 sub forall {
