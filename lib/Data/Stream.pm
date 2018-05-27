@@ -5,26 +5,29 @@ no warnings 'recursion';
 use utf8;
 use List::Util qw/reduce/;
 use Clone 'clone';
+use Mouse;
 
 use Data::Stream::Cons;
+use Monad::Lazy;
 
 use Data::Dumper;
 
-sub new {
-    my ($class, $cons, $config) = @_;
-    
-    $cons //= $Data::Stream::Cons::EMPTY;
-    $config //= +{
+has config => (
+    is  => 'ro',
+    isa => 'HashRef',
+    default => sub { +{ 
         map_f => undef,
         filter_f => undef,
         take_while_f => undef
-    };
+    } }
+);
 
-    bless +{
-        cons => $cons,
-        config => $config
-    } => $class
-}
+has cons => (
+    is  => 'ro',
+    isa => 'Data::Stream::Cons',
+    default => sub { $Data::Stream::Cons::EMPTY }
+);
+
 
 sub from_list {
     my $class = shift;
@@ -33,19 +36,19 @@ sub from_list {
     for my $item (reverse @_) {
         my $old = $cons;
         $cons = Data::Stream::Cons->new(
-            sub { $item },
-            sub { $old }
+            value => Monad::Lazy::mreturn($item),
+            tail  =>Monad::Lazy::mreturn($old),
         );
     }
-    Data::Stream->new($cons);
+    Data::Stream->new(cons => $cons);
 }
 
 sub from_vf {
     my ($class, $v, $f) = @_;
     Data::Stream->new(
-        Data::Stream::Cons->new(
-            sub { $v },
-            sub { Data::Stream->from_vf($f->($v), $f)->{cons} }
+        cons => Data::Stream::Cons->new(
+            value => Monad::Lazy::mreturn($v),
+            tail  => Monad::Lazy->new(_gen => sub { Data::Stream->from_vf($f->($v), $f)->{cons} })
         )
     );
 }
@@ -63,17 +66,20 @@ sub next {
     my $take_while_f = $config->{take_while_f} // sub { 1 };
     my $filter_f = $config->{filter_f} // sub { 1 };
     
-    return Data::Stream->new($Data::Stream::Cons::EMPTY, $self->{config}) if not defined $cons;
+    return Data::Stream->new(
+        cons => $Data::Stream::Cons::EMPTY,
+        config => $self->{config}
+        ) if not defined $cons;
 
     while ($cons != $Data::Stream::Cons::EMPTY) {
-        my $value = $map_f->($cons->value);
+        my $value = $map_f->($cons->value->eval);
 
-        return Data::Stream->new($Data::Stream::Cons::EMPTY) if not $take_while_f->($value);
-        return Data::Stream->new($cons, $config) if $filter_f->($value);
+        return Data::Stream->new(cons => $Data::Stream::Cons::EMPTY) if not $take_while_f->($value);
+        return Data::Stream->new(cons => $cons, config => $config) if $filter_f->($value);
 
-        $cons = $cons->tail;
+        $cons = $cons->tail->eval;
     }
-    return Data::Stream->new($cons);
+    return Data::Stream->new(cons => $cons, config => $config);
 }
 
 # 自分を含めずに次に有効な要素を先頭とするStreamを返す
@@ -81,14 +87,14 @@ sub next {
 sub tail {
     my $self = shift;
     return $self if $self->{cons} == $Data::Stream::Cons::EMPTY;
-    return Data::Stream->new($self->{cons}->tail, $self->{config})->next;
+    return Data::Stream->new(cons => $self->{cons}->tail->eval, config => $self->{config})->next;
 }
 
 
 sub value {
     my $self = shift;
     my $map_f = $self->{config}->{map_f} // sub { shift };
-    return $map_f->($self->{cons}->value);
+    return $map_f->($self->{cons}->value->eval);
 }
 
 ###### collection methoods ######
@@ -106,7 +112,7 @@ sub map {
         $conf->{map_f} = $f;
     }
 
-    Data::Stream->new($self->{cons}, $conf);
+    Data::Stream->new(cons => $self->{cons}, config => $conf);
 }
 
 sub filter {
@@ -120,7 +126,7 @@ sub filter {
         $conf->{filter_f} = $f;
     }
 
-    Data::Stream->new($self->{cons}, $conf);
+    Data::Stream->new(cons => $self->{cons}, config => $conf);
 }
 
 sub take_while {
@@ -133,7 +139,7 @@ sub take_while {
         $conf->{take_while_f} = $f;
     }
 
-    Data::Stream->new($self->{cons}, $conf);
+    Data::Stream->new(cons => $self->{cons}, config => $conf);
 }
 
 ##### iterate methods #####
@@ -167,6 +173,7 @@ sub foldr {
     # $f :: a -> b -> b
     my $call_next = not defined shift;
 
+    # 遅延評価を楽にできるようにLazyMonadを実装するの面白そう
     $f->()
 }
 
