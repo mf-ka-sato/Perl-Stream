@@ -105,6 +105,9 @@ sub is_empty {
 ###### collection methoods ######
 
 ##### register methods #####
+# 情報登録系メソッド
+# メソッド実行時には関数の登録を行い、
+# 値を取り出す際にその関数を適用する
 
 sub map {
     my ($self, $f) = @_;
@@ -161,6 +164,7 @@ sub foreach: method {
 }
 
 ##### fold methods #####
+# 要素を1つの値にまとめるメソッド
 
 sub foldl {
     my ($self, $acc, $f) = @_;
@@ -219,5 +223,28 @@ sub to_arrayref {
     $self->foreach(sub { push @arr, $_[0] });
     \@arr;
 }
+
+#### merge methods ####
+
+sub zip_with {
+    my ($st1, $st2, $zip_f) = @_;
+    # $zip_f :: Function($st1 -> $st2 -> Any)
+    my $call_next = not defined shift;
+    if ($call_next) {
+        $st1 = $st1->next;
+        $st2 = $st2->next;
+    }
+
+    return Data::Stream->new(cons => $Data::Stream::Cons::EMPTY)
+        if $st1->is_empty or $st2->is_empty; 
+
+    Data::Stream->new(
+        cons => Data::Stream::Cons->new(
+            value => Monad::Lazy::gen(sub { $zip_f->($st1->value, $st2->value) }),
+            tail  => Monad::Lazy::gen(sub { $st1->tail->zip_with($st2->tail, $zip_f, 1)->{cons} })
+        )
+    );
+}
+
 
 1;
