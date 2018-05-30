@@ -1,7 +1,6 @@
 package Data::Stream;
 use strict;
 use warnings;
-no warnings 'recursion';
 use utf8;
 use List::Util qw/reduce/;
 use Clone 'clone';
@@ -87,7 +86,8 @@ sub next {
 sub tail {
     my $self = shift;
     return $self if $self->is_empty; 
-    return Data::Stream->new(cons => $self->{cons}->tail->eval, config => $self->{config})->next;
+    my $tail = $self->{cons}->tail->eval;
+    return Data::Stream->new(cons => $tail, config => $self->{config})->next;
 }
 
 
@@ -175,28 +175,42 @@ sub foldl {
 # 遅延評価使えば無限リストに対しても動作するfoldr作れそう
 sub foldr {
     my ($self, $f, $acc) = @_;
-    # $f :: Monad::Lazy(a) -> b -> b
-    
+    # $f :: a -> Monad::Lazy(b) -> b
+
     my $call_next = not defined shift;
     my $stream = $call_next ? $self->next : $self;
 
     return $acc if $stream->is_empty;
 
-    #return $
+    no warnings 'recursion';
+    my $value = $stream->value;
+    my $lazy_tail = Monad::Lazy->new(_gen => sub { $stream->tail->foldr($f, $acc, 1) });
+
+    $f->($value, $lazy_tail);
 }
 
 sub forall {
     my ($self, $f) = @_;
     # $f :: Function(Any -> Bool)
-    
-    $self->foldl(1, sub { $_[0] && $f->($_[1]) });
+    my $stream = $self->next;
+
+    while (not $stream->is_empty) {
+        return 0 if not $f->($stream->value);
+        $stream = $stream->tail;
+    }
+    return 1;
 }
 
 sub exists {
     my ($self, $f) = @_;
     # $f :: Function(Any -> Bool)
-    
-    $self->foldl(0, sub { $_[0] || $f->($_[1]) });
+    my $stream = $self->next;
+
+    while (not $stream->is_empty) {
+        return 1 if $f->($stream->value);
+        $stream = $stream->tail;
+    }
+    return 0;
 }
 
 sub to_arrayref {
