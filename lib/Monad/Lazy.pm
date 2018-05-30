@@ -23,6 +23,10 @@ sub mreturn {
     Monad::Lazy->new(_value => $v, _gen => sub { $v });
 }
 
+sub gen {
+    Monad::Lazy->new(_gen => shift);
+}
+
 # methods
 
 sub eval {
