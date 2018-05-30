@@ -12,7 +12,7 @@ our $EMPTY = bless {}, 'Data::Stream::Cons';
 has value => (
     is  => 'ro',
     isa => 'Monad::Lazy',
-    default => undef
+    required => 1
 );
 
 has tail => (
